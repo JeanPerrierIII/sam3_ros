@@ -41,7 +41,7 @@ This package performs **promptable segmentation using text prompts**, providing 
 - Object segmentation via text instructions  
 - Multi-class and multi-instance support  
 - Bounding box output (Detection2D)  
-- Detection with segmentation masks (Detection2DWithMask)  
+- Detection with lossless 1-bit indexed PNG masks (Detection2DWithCompressedMask)
 - Visualization image output 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -159,8 +159,39 @@ The following parameters can be configured in [sam3.launch.py](https://github.co
 | Topic                                   | Type                     | Description                  |
 | --------------------------------------- | ------------------------ | ---------------------------- |
 | `/sam3_ros/object_boxes`                | Detection2DArray         | Bounding boxes only          |
-| `/sam3_ros/object_detections_with_mask` | Detection2DWithMaskArray | Detection results with masks |
+| `/sam3_ros/object_detections_with_mask` | sam3_ros/Detection2DWithCompressedMaskArray | Detection results with 1-bit indexed PNG masks |
 | `/sam3_ros/segmented_image`             | sensor_msgs/Image        | Visualization image          |
+
+Each detection's `mask` is a `sensor_msgs/CompressedImage` with format
+`mono8; png compressed`. Its data is a complete lossless PNG with bit depth 1
+and indexed color (PNG color type 3). Palette index 0 is background (black),
+and index 1 is foreground (white). Masks retain their original dimensions and
+camera header, including overlapping instances. The pixels are packed eight
+per byte before PNG compression at level 9.
+
+**Subscriber migration:** the topic now uses the messages defined in this
+package, replacing `sobits_interfaces/Detection2DWithMaskArray`. Rebuild and
+source the workspace on publishers and subscribers, then update the import and
+decode the compressed mask instead of calling `imgmsg_to_cv2`:
+
+```python
+from cv_bridge import CvBridge
+from sam3_ros.msg import Detection2DWithCompressedMaskArray
+
+bridge = CvBridge()
+
+def detection_callback(message: Detection2DWithCompressedMaskArray):
+    for detection in message.detections:
+        mask_mono8 = bridge.compressed_imgmsg_to_cv2(detection.mask, 'mono8')
+        mask_bool = mask_mono8 != 0
+```
+
+Pillow readers can access palette indices as 0/1 directly; converting to
+grayscale returns 0/255. Bounding box and visualization topic types are unchanged.
+This package now uses `ament_cmake` to generate its messages and install the Python
+node; the launch command remains the same. Pillow is required (`python3-pil` via
+rosdep, or installed by `install.sh`). The visualization topic still carries a raw
+color image; subscribe to it only when needed on a bandwidth-limited connection.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

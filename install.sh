@@ -8,7 +8,7 @@ cd sobits_interfaces/ && bash install.sh && cd ..
 cd image_to_position/ && bash install.sh && cd ..
 
 pip3 install torch
-pip3 install ultralytics "numpy<2"
+pip3 install ultralytics "numpy<2" Pillow
 
 sudo apt install ros-$ROS_DISTRO-vision-msgs
 

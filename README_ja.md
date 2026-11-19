@@ -40,7 +40,7 @@ sam3_ros は，Meta が公開した Segment Anything Model 3 (SAM3) を ROS 2で
 - テキスト指示による物体セグメンテーション
 - マルチクラス・マルチインスタンス対応
 - バウンディングボックス (Detection2D)
-- セグメンテーションマスク付き検出 (Detection2DWithMask)
+- 1-bit インデックス PNG マスク付き検出 (Detection2DWithCompressedMask)
 - 可視化済み画像出力
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
@@ -159,8 +159,21 @@ SAM 3 の重みファイル（`sam3.pt`）はライセンスの都合上，自�
 | Topic名                                  | 型                        | 説明            |
 | --------------------------------------- | ------------------------ | ------------- |
 | `/sam3_ros/object_boxes`                | Detection2DArray         | バウンディングボックスのみ |
-| `/sam3_ros/object_detections_with_mask` | Detection2DWithMaskArray | マスク付き検出結果     |
+| `/sam3_ros/object_detections_with_mask` | sam3_ros/Detection2DWithCompressedMaskArray | 1-bit インデックス PNG マスク付き検出結果 |
 | `/sam3_ros/segmented_image`             | sensor_msgs/Image        | 可視化画像         |
+
+各検出の `mask` は `sensor_msgs/CompressedImage` であり，`format` は
+`mono8; png compressed` です．PNG のビット深度は 1，カラータイプは 3
+（インデックスカラー）です．パレットの 0 は背景（黒），1 は前景（白）を表します．
+元の画像サイズとカメラヘッダーを維持し，PNG 圧縮レベル 9 で可逆圧縮します．
+
+購読側は `sobits_interfaces/Detection2DWithMaskArray` から
+`sam3_ros/Detection2DWithCompressedMaskArray` に変更し，ワークスペースを再ビルドして
+source してください．マスクの復号には
+`CvBridge().compressed_imgmsg_to_cv2(detection.mask, 'mono8')` を使用します．
+復号後の画素値は背景 0，前景 255 です．バウンディングボックスと可視化画像の型は
+変更ありません．メッセージ生成のためビルド形式を `ament_cmake` に変更していますが，
+起動コマンドは同じです．Pillow（`python3-pil`）が必要です．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 

@@ -5,15 +5,14 @@ from cv_bridge import CvBridge
 import rclpy
 from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSDurabilityPolicy, QoSReliabilityPolicy
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray, Detection2D, ObjectHypothesisWithPose
-from sobits_interfaces.msg import Detection2DWithMask, Detection2DWithMaskArray
+from sam3_ros.msg import Detection2DWithCompressedMask, Detection2DWithCompressedMaskArray
 from geometry_msgs.msg import Point, Quaternion
 from std_srvs.srv import SetBool
 
-from ultralytics.models.sam import SAM3SemanticPredictor
+from .mask_transport import encode_mask
 
 
 class Sam3Node(LifecycleNode):
@@ -30,7 +29,7 @@ class Sam3Node(LifecycleNode):
         self.declare_parameter("image_show", False)
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-    
+
         self.weight_file = self.get_parameter("weight_file").value
         self.threshold = self.get_parameter("threshold").value
         self.half = self.get_parameter("half").value
@@ -49,7 +48,7 @@ class Sam3Node(LifecycleNode):
             Detection2DArray, "object_boxes", 1
         )
         self.pub_det_mask = self.create_lifecycle_publisher(
-            Detection2DWithMaskArray, "object_detections_with_mask", 1
+            Detection2DWithCompressedMaskArray, "object_detections_with_mask", 1
         )
         self.pub_img = self.create_lifecycle_publisher(
             Image, "segmented_image", 1
@@ -62,6 +61,8 @@ class Sam3Node(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+
+        from ultralytics.models.sam import SAM3SemanticPredictor
 
         overrides = dict(
             conf=self.threshold,
@@ -119,7 +120,7 @@ class Sam3Node(LifecycleNode):
             self.predictor.set_image(cv_image)
             self.last_stamp = msg.header.stamp
 
-        det_array = Detection2DWithMaskArray()
+        det_array = Detection2DWithCompressedMaskArray()
         det_array.header = msg.header
 
         det_boxes = Detection2DArray()
@@ -149,11 +150,10 @@ class Sam3Node(LifecycleNode):
                 ys, xs = np.where(mask_np)
                 x, y, w, h = cv2.boundingRect(np.column_stack((xs, ys)))
 
-
                 # -----------------------------
-                # Detection2DWithMask
+                # Detection2DWithCompressedMask
                 # -----------------------------
-                det = Detection2DWithMask()
+                det = Detection2DWithCompressedMask()
                 det.header = msg.header
                 det.instance_id = instance_id
                 det.class_id = class_name
@@ -172,12 +172,9 @@ class Sam3Node(LifecycleNode):
                 )
                 det.hypothesis.pose.pose.orientation = Quaternion(w=1.0)
 
-                binary_mask = (mask_np * 255).astype(np.uint8)
-                det.mask = self.bridge.cv2_to_imgmsg(binary_mask, encoding="mono8")
-                det.mask.header = msg.header
+                det.mask = encode_mask(mask_np, msg.header)
 
                 det_array.detections.append(det)
-
 
                 # -----------------------------
                 # Detection2D (no mask)
@@ -203,7 +200,6 @@ class Sam3Node(LifecycleNode):
                 ohwp.pose.pose.orientation = Quaternion(w=1.0)
 
                 det_boxes.detections.append(det2d)
-
 
                 # -----------------------------
                 # Visualization
@@ -242,9 +238,10 @@ class Sam3Node(LifecycleNode):
         )
 
     def get_color_for_class(self, name: str):
-        """Deterministic color from class name"""
+        """Return a deterministic color from the class name."""
         rng = abs(hash(name)) % (256**3)
         return ((rng >> 16) & 255, (rng >> 8) & 255, rng & 255)
+
 
 def main(args=None):
     rclpy.init(args=args)
